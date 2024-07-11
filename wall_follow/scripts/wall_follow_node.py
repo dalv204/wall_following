@@ -6,6 +6,7 @@ from rclpy.node import Node
 import numpy as np
 from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
+from sensor_msgs.msg import Joy
 
 class WallFollow(Node):
     """ 
@@ -16,7 +17,14 @@ class WallFollow(Node):
 
         lidarscan_topic = '/scan'
         drive_topic = '/drive'
+        joy_topic = "/joy"
         
+        qos = rclpy.qos.QoSProfile(history=rclpy.qos.QoSHistoryPolicy.KEEP_LAST,
+                                   depth=1,
+                                   reliability=rclpy.qos.QoSReliabilityPolicy.RELIABLE,
+                                   durability=rclpy.qos.QoSDurabilityPolicy.VOLATILE)
+
+        self.subscription_joy = self.create_subscription(Joy, joy_topic, self.joy_callback, qos)
         self.subscription_laser = self.create_subscription(LaserScan, lidarscan_topic, self.scan_callback, 10)
         self.publisher_ = self.create_publisher(AckermannDriveStamped, drive_topic, 10)
 
@@ -36,6 +44,16 @@ class WallFollow(Node):
         self.kp = 1
         self.ki = 0
         self.kd = .6
+
+        self.safe=False
+
+    def joy_callback(self, msg):
+        deadman = 0
+        if msg.buttons[deadman] ==1:
+            # button was pressed
+            self.safe=True
+        else:
+            self.safe=False
 
     def get_range(self, range_data, angle):
         """
@@ -122,7 +140,9 @@ class WallFollow(Node):
         # create and publish drive message
         drive_msg = AckermannDriveStamped()
         drive_msg.drive.steering_angle = control_effort
-        drive_msg.drive.speed = velocity
+        if self.safe:
+            drive_msg.drive.speed = velocity
+        else: drive_msg.drive.speed = 0.0
 
         self.publisher_.publish(drive_msg)
 
